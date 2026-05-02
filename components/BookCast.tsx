@@ -1,84 +1,198 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { loadBook } from "@/lib/book";
-import {
-  getWordIndex,
-  getVisibleWindow,
-  TICK_MS,
-  WINDOW_SIZE,
-  FADE_WORDS,
-} from "@/lib/timing";
+import { useEffect, useRef, useState } from "react";
+import { loadBook, type BookBlock, type BookSegment } from "@/lib/book";
+import { BOOKS, getPlaylistState, formatCountdown } from "@/lib/playlist";
+import { useReaderCount } from "@/hooks/useReaderCount";
+import { useWakeLock } from "@/hooks/useWakeLock";
 
-function getOpacity(position: number): number {
-  if (position < FADE_WORDS) {
-    return (position + 1) / (FADE_WORDS + 1);
-  }
-  if (position >= WINDOW_SIZE - FADE_WORDS) {
-    return (WINDOW_SIZE - position) / (FADE_WORDS + 1);
-  }
-  return 1;
+interface BookState {
+  blocks: BookBlock[];
+  wordCounts: number[];
+  bookIndex: number;
 }
 
 export default function BookCast() {
-  const [words, setWords] = useState<string[]>([]);
-  const [visibleWords, setVisibleWords] = useState<string[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const readerCount = useReaderCount();
+  useWakeLock();
+  const [bookState, setBookState] = useState<BookState | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [countdown, setCountdown] = useState("");
+  const [visibleBookIndex, setVisibleBookIndex] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number>(0);
+  const textHeightRef = useRef<number>(0);
 
+  // Load all books upfront to get their word counts, then load current book's segments
   useEffect(() => {
-    loadBook().then(setWords);
+    (async () => {
+      // Load all books to get word counts
+      const allLoaded = await Promise.all(BOOKS.map((b) => loadBook(b.file)));
+      const wordCounts = allLoaded.map((b) => b.wordCount);
+
+      // Determine which book is current right now
+      const state = getPlaylistState(wordCounts);
+      const currentBook = allLoaded[state.bookIndex];
+
+      setBookState({
+        blocks: currentBook.blocks,
+        wordCounts,
+        bookIndex: state.bookIndex,
+      });
+      setVisibleBookIndex(state.bookIndex);
+    })();
   }, []);
 
-  const tick = useCallback(() => {
-    if (words.length === 0) return;
-    const idx = getWordIndex(words.length);
-    setCurrentIndex(idx);
-    setVisibleWords(getVisibleWindow(words, idx));
-  }, [words]);
-
   useEffect(() => {
-    if (words.length === 0) return;
-    tick();
-    const interval = setInterval(tick, TICK_MS);
-    return () => clearInterval(interval);
-  }, [words, tick]);
+    if (!bookState || !scrollRef.current || !textRef.current) return;
 
-  if (words.length === 0) {
+    const measure = () => {
+      if (textRef.current) {
+        textHeightRef.current = textRef.current.scrollHeight;
+      }
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(textRef.current);
+
+    let lastUpdate = 0;
+
+    const loop = () => {
+      const state = getPlaylistState(bookState.wordCounts);
+      const totalH = textHeightRef.current;
+
+      if (totalH > 0 && scrollRef.current) {
+        const offset = state.progress * totalH;
+        scrollRef.current.style.transform = `translateY(-${offset}px)`;
+      }
+
+      const now = Date.now();
+      if (now - lastUpdate > 500) {
+        lastUpdate = now;
+        setProgress(state.progress);
+        setCountdown(formatCountdown(state.msRemainingInBook));
+
+        // If the book changed mid-session, reload
+        if (state.bookIndex !== bookState.bookIndex) {
+          loadBook(BOOKS[state.bookIndex].file).then((loaded) => {
+            setBookState((prev) =>
+              prev
+                ? { ...prev, blocks: loaded.blocks, bookIndex: state.bookIndex }
+                : null
+            );
+            setVisibleBookIndex(state.bookIndex);
+            textHeightRef.current = 0;
+          });
+        }
+      }
+
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    rafRef.current = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      ro.disconnect();
+    };
+  }, [bookState]);
+
+  if (!bookState) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen min-h-dvh">
         <p className="text-[#8a7a6a] text-lg italic">Opening the book...</p>
       </div>
     );
   }
 
-  const progress = ((currentIndex / words.length) * 100).toFixed(1);
+  const currentBook = BOOKS[visibleBookIndex];
+  const nextBook = BOOKS[(visibleBookIndex + 1) % BOOKS.length];
+  const progressPct = Math.round(progress * 100);
+  const fullTitle = `${currentBook.titleLine1} ${currentBook.titleLine2}`.trim();
+
+  const renderSegments = (segments: BookSegment[]) =>
+    segments.map((seg, i) =>
+      seg.italic ? <em key={i}>{seg.text}</em> : <span key={i}>{seg.text}</span>
+    );
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-6 py-12">
-      <header className="mb-12 text-center">
-        <h1 className="text-sm tracking-[0.3em] uppercase text-[#8a7a6a] mb-1">
-          The Strange Case of
+    <div className="flex flex-col min-h-screen min-h-dvh">
+      <header className="pt-6 sm:pt-10 pb-3 text-center shrink-0 z-10">
+        <p className="text-[10px] sm:text-xs tracking-[0.3em] uppercase text-[#8a7a6a] mb-3">
+          {readerCount === null
+            ? "Now reading:"
+            : readerCount === 1
+              ? "1 person now reading:"
+              : `${readerCount} people now reading:`}
+        </p>
+        <h1 className="text-sm sm:text-base tracking-[0.15em] uppercase text-[#6a5a4a] mb-0.5">
+          {fullTitle}
         </h1>
-        <h2 className="text-lg tracking-[0.15em] uppercase text-[#6a5a4a]">
-          Dr. Jekyll & Mr. Hyde
-        </h2>
+        <p className="text-[10px] sm:text-xs tracking-[0.2em] text-[#8a7a6a] mt-1">
+          by {currentBook.author}
+        </p>
       </header>
 
-      <div className="max-w-[600px] w-full leading-[2] text-xl text-center">
-        {visibleWords.map((word, i) => (
-          <span
-            key={`${currentIndex}-${i}`}
-            className="inline transition-opacity duration-500 ease-in-out"
-            style={{ opacity: getOpacity(i) }}
+      <div
+        className="flex-1 relative overflow-hidden"
+        style={{
+          maskImage:
+            "linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)",
+        }}
+      >
+        <div className="absolute inset-0 flex justify-center overflow-hidden">
+          <div
+            ref={scrollRef}
+            className="max-w-[500px] w-full px-6 sm:px-8 will-change-transform"
           >
-            {word}{" "}
-          </span>
-        ))}
+            <div style={{ height: "100vh" }} aria-hidden="true" />
+            <div
+              ref={textRef}
+              className="text-lg sm:text-xl text-center tracking-[0.01em]"
+            >
+              {bookState.blocks.map((block, i) =>
+                block.type === "heading" ? (
+                  <h3
+                    key={i}
+                    className="mt-8 mb-4 text-[0.9em] tracking-[0.12em] uppercase text-[#6a5a4a]"
+                  >
+                    {renderSegments(block.segments)}
+                  </h3>
+                ) : (
+                  <p key={i} className="mb-5 leading-[2] sm:leading-[2.2]">
+                    {renderSegments(block.segments)}
+                  </p>
+                )
+              )}
+            </div>
+            <div style={{ height: "100vh" }} aria-hidden="true" />
+          </div>
+        </div>
       </div>
 
-      <footer className="mt-16 text-center text-xs text-[#b0a090] tracking-wider">
-        <p>{progress}% through the book</p>
-        <p className="mt-1">Robert Louis Stevenson, 1886</p>
+      <footer className="pb-8 sm:pb-12 pt-3 text-center text-[10px] sm:text-xs text-[#b0a090] tracking-wider shrink-0 z-10">
+        <p>{progressPct}% through</p>
+        {countdown && (
+          <p className="mt-0.5">
+            {countdown} until{" "}
+            <span className="italic">{nextBook.titleLine1}</span>{" "}
+            by {nextBook.author} begins
+          </p>
+        )}
+        <p className="mt-2">
+          Designed by{" "}
+          <a
+            href="https://www.amirbh.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#c0b0a0] hover:text-[#8a7a6a] transition-colors underline underline-offset-2"
+          >
+            Amir Ben-Harosh
+          </a>
+        </p>
       </footer>
     </div>
   );

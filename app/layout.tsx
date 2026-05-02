@@ -27,7 +27,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${garamond.variable} h-full antialiased`}>
       <body
-        className="min-h-full flex flex-col"
+        className="h-full flex flex-col"
         style={{ fontFamily: "var(--font-garamond), serif" }}
       >
         {children}

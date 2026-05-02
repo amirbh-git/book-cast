@@ -1,21 +1,14 @@
 export const EPOCH = new Date("2026-01-01T00:00:00Z").getTime();
-export const TICK_MS = 500;
-export const WINDOW_SIZE = 40;
-export const FADE_WORDS = 4;
 
-export function getWordIndex(totalWords: number, now: number = Date.now()): number {
+// Milliseconds per word — controls the pace. 450ms ≈ 2.2 words/sec ≈ 133 wpm
+export const MS_PER_WORD = 450;
+
+/**
+ * Returns a value from 0 to 1 representing progress through the book.
+ * Identical on every device since it only depends on Date.now() and totalWords.
+ */
+export function getProgress(totalWords: number, now: number = Date.now()): number {
   const elapsed = now - EPOCH;
-  return Math.floor(elapsed / TICK_MS) % totalWords;
-}
-
-export function getVisibleWindow(
-  words: string[],
-  wordIndex: number
-): string[] {
-  const total = words.length;
-  const result: string[] = [];
-  for (let i = 0; i < WINDOW_SIZE; i++) {
-    result.push(words[(wordIndex + i) % total]);
-  }
-  return result;
+  const wordPos = (elapsed / MS_PER_WORD) % totalWords;
+  return wordPos / totalWords;
 }

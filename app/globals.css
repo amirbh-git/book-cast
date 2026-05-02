@@ -6,10 +6,13 @@
   --ink-light: #8a7a6a;
 }
 
+html, body {
+  height: 100%;
+}
+
 body {
   background-color: var(--parchment);
   color: var(--ink);
-  min-height: 100vh;
 }
 
 ::selection {
