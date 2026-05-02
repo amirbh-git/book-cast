@@ -1,36 +1,18 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Book-Cast
 
-## Getting Started
+Book-Cast is a slow, ambient reader for public-domain literature. A fixed playlist of classics advances on a shared clock—every visitor sees the same passage at the same moment—so reading feels quietly communal, like tuning into a radio broadcast.
 
-First, run the development server:
+The interface stays minimal: vertically scrolling text, optional wake lock so phones stay awake during longer listens, and a small live count of concurrent readers (stored briefly server-side for presence only).
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## What runs here
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **Next.js (App Router)** — UI and API routes.
+- **Timed playlist** — Books rotate on a schedule derived from word counts; see `lib/playlist.ts` and `lib/timing.ts`.
+- **Texts** — Plain `.txt` sources under `public/books/` (Project Gutenberg–style public domain material).
+- **Presence** — `POST /api/presence` records an anonymous session heartbeat and returns an approximate reader count; rows expire after a short TTL. Backed by **Neon** (Postgres) via `@neondatabase/serverless`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Deployed on **Vercel** with build-time and runtime env configured in the hosting dashboard—not checked into git.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Configuration (operators)
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The app expects a **`DATABASE_URL`** at runtime (Neon connection string). It is read only from the environment; nothing equivalent belongs in the repository.
