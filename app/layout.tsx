@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { EB_Garamond } from "next/font/google";
 import "./globals.css";
 
@@ -31,6 +32,7 @@ export default function RootLayout({
         style={{ fontFamily: "var(--font-garamond), serif" }}
       >
         {children}
+        <Analytics />
       </body>
     </html>
   );
